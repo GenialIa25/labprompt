@@ -54,6 +54,51 @@ export const fetchWorkflowDetails = async (config: N8nApiConfig, workflowId: str
     return response; // A resposta da API já contém a estrutura com os nós
 };
 
+// Função auxiliar para atualizar um valor em um objeto usando uma chave aninhada
+const setNestedValue = (obj: any, path: string, value: any): void => {
+    const keys = path.split('.');
+    let current = obj;
+    
+    // Processa arrays como messages[0].content
+    for (let i = 0; i < keys.length - 1; i++) {
+        const key = keys[i];
+        const arrayMatch = key.match(/^(.+)\[(\d+)\]$/);
+        
+        if (arrayMatch) {
+            const arrayKey = arrayMatch[1];
+            const arrayIndex = parseInt(arrayMatch[2], 10);
+            
+            if (!current[arrayKey]) {
+                current[arrayKey] = [];
+            }
+            if (!current[arrayKey][arrayIndex]) {
+                current[arrayKey][arrayIndex] = {};
+            }
+            current = current[arrayKey][arrayIndex];
+        } else {
+            if (!current[key] || typeof current[key] !== 'object') {
+                current[key] = {};
+            }
+            current = current[key];
+        }
+    }
+    
+    // Define o valor final
+    const lastKey = keys[keys.length - 1];
+    const lastArrayMatch = lastKey.match(/^(.+)\[(\d+)\]$/);
+    
+    if (lastArrayMatch) {
+        const arrayKey = lastArrayMatch[1];
+        const arrayIndex = parseInt(lastArrayMatch[2], 10);
+        if (!current[arrayKey]) {
+            current[arrayKey] = [];
+        }
+        current[arrayKey][arrayIndex] = value;
+    } else {
+        current[lastKey] = value;
+    }
+};
+
 export const updateNodeParameter = async (
     config: N8nApiConfig,
     workflowId: string,
@@ -73,8 +118,14 @@ export const updateNodeParameter = async (
     // Cria uma cópia profunda para evitar mutação direta
     const updatedWorkflow = JSON.parse(JSON.stringify(workflow));
     
-    // Atualiza o parâmetro
-    updatedWorkflow.nodes[nodeIndex].parameters[parameterKey] = promptContent;
+    // Atualiza o parâmetro (suporta chaves aninhadas como "options.prompt" ou "messages[0].content")
+    if (parameterKey.includes('.') || parameterKey.includes('[')) {
+        // Chave aninhada - usa função auxiliar
+        setNestedValue(updatedWorkflow.nodes[nodeIndex].parameters, parameterKey, promptContent);
+    } else {
+        // Chave simples no nível raiz
+        updatedWorkflow.nodes[nodeIndex].parameters[parameterKey] = promptContent;
+    }
 
     // 3. Enviar o workflow modificado de volta via PUT
     await n8nFetch(`/workflows/${workflowId}`, config, {

@@ -69,9 +69,9 @@ export const N8nIntegration: React.FC<N8nIntegrationProps> = ({ config, setConfi
             setError(null);
             try {
                 const workflowDetails = await fetchWorkflowDetails(config, selectedWorkflowId);
-                // Filtra para nós que provavelmente contêm prompts
-                const relevantNodeTypes = ['n8n-nodes-base.set', 'n8n-nodes-base.gemini', 'n8n-nodes-base.openAi', 'n8n-nodes-base.httpRequest'];
-                setNodes(workflowDetails.nodes.filter(node => relevantNodeTypes.some(type => node.type.includes(type))));
+                // Mostra TODOS os nodes - o usuário pode escolher qualquer um
+                // Nodes de IA são comuns: gemini, openAi, anthropic, mistral, etc.
+                setNodes(workflowDetails.nodes || []);
             } catch (e: any) {
                 setError(e.message || "Falha ao buscar os nós do workflow.");
             } finally {
@@ -81,6 +81,52 @@ export const N8nIntegration: React.FC<N8nIntegrationProps> = ({ config, setConfi
         fetchNodes();
     }, [selectedWorkflowId, config]);
 
+    // Função para buscar campos de prompt em objetos aninhados (movida para fora do useEffect)
+    const findPromptFields = React.useCallback((obj: any, prefix: string = '', depth: number = 0): string[] => {
+        const fields: string[] = [];
+        if (depth > 3) return fields; // Limita profundidade para evitar loops
+        
+        if (!obj || typeof obj !== 'object') return fields;
+        
+        // Campos comuns que contêm prompts
+        const promptFieldNames = [
+            'prompt', 'systemMessage', 'systemPrompt', 'instruction', 'instructions',
+            'message', 'messages', 'content', 'text', 'input', 'query',
+            'system', 'assistant', 'user', 'context'
+        ];
+        
+        for (const key in obj) {
+            const fullPath = prefix ? `${prefix}.${key}` : key;
+            const value = obj[key];
+            
+            // Se o nome do campo sugere que é um prompt
+            if (promptFieldNames.some(name => key.toLowerCase().includes(name.toLowerCase()))) {
+                if (typeof value === 'string' || (typeof value === 'object' && value !== null)) {
+                    fields.push(fullPath);
+                }
+            }
+            
+            // Se for um objeto, busca recursivamente
+            if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+                fields.push(...findPromptFields(value, fullPath, depth + 1));
+            }
+            
+            // Se for um array de objetos (como messages), busca no primeiro item
+            if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'object') {
+                fields.push(...findPromptFields(value[0], `${fullPath}[0]`, depth + 1));
+            }
+            
+            // Também adiciona campos string simples do nível raiz
+            if (depth === 0 && typeof value === 'string' && value.length > 0) {
+                if (!fields.includes(fullPath)) {
+                    fields.push(fullPath);
+                }
+            }
+        }
+        
+        return fields;
+    }, []);
+
     useEffect(() => {
         if (!selectedNodeId) {
             setNodeParameters([]);
@@ -89,11 +135,15 @@ export const N8nIntegration: React.FC<N8nIntegrationProps> = ({ config, setConfi
         }
         const selectedNode = nodes.find(n => n.id === selectedNodeId);
         if (selectedNode) {
-            // Filtra parâmetros que são strings e não são objetos complexos
-            const stringParams = Object.keys(selectedNode.parameters).filter(key => typeof selectedNode.parameters[key] === 'string');
-            setNodeParameters(stringParams);
+            // Busca campos de prompt em toda a estrutura de parâmetros
+            const promptFields = findPromptFields(selectedNode.parameters);
+            
+            // Remove duplicatas e ordena
+            const uniqueFields = [...new Set(promptFields)].sort();
+            
+            setNodeParameters(uniqueFields);
         }
-    }, [selectedNodeId, nodes]);
+    }, [selectedNodeId, nodes, findPromptFields]);
 
     const handleUpdateNode = async () => {
         if (!selectedWorkflowId || !selectedNodeId || !selectedParameterKey) {
@@ -168,25 +218,63 @@ export const N8nIntegration: React.FC<N8nIntegrationProps> = ({ config, setConfi
                             {workflows.map(wf => <option key={wf.id} value={wf.id}>{wf.name}</option>)}
                         </select>
                     </div>
-                    {nodes.length > 0 && (
+                    {nodes.length > 0 ? (
                         <>
                              <div>
-                                <label className="block text-sm font-medium text-slate-300">2. Selecione o Nó</label>
+                                <label className="block text-sm font-medium text-slate-300 mb-1">
+                                    2. Selecione o Nó ({nodes.length} {nodes.length === 1 ? 'nó encontrado' : 'nós encontrados'})
+                                </label>
                                 <select value={selectedNodeId} onChange={e => setSelectedNodeId(e.target.value)} className={baseInputClasses}>
                                     <option value="">-- Escolha um nó --</option>
-                                    {nodes.map(node => <option key={node.id} value={node.id}>{node.name} ({node.type})</option>)}
+                                    {nodes.map(node => (
+                                        <option key={node.id} value={node.id}>
+                                            {node.name} ({node.type})
+                                        </option>
+                                    ))}
                                 </select>
+                                <p className="text-xs text-slate-400 mt-1">
+                                    Dica: Procure por nodes de IA como Gemini, OpenAI, Anthropic, ou qualquer node que aceite prompts.
+                                </p>
                             </div>
-                            {nodeParameters.length > 0 && (
-                                 <div>
-                                    <label className="block text-sm font-medium text-slate-300">3. Selecione o Campo do Prompt</label>
-                                    <select value={selectedParameterKey} onChange={e => setSelectedParameterKey(e.target.value)} className={baseInputClasses}>
-                                        <option value="">-- Escolha um campo --</option>
-                                        {nodeParameters.map(param => <option key={param} value={param}>{param}</option>)}
-                                    </select>
-                                </div>
+                            {selectedNodeId && (
+                                <>
+                                    {nodeParameters.length > 0 ? (
+                                        <div>
+                                            <label className="block text-sm font-medium text-slate-300 mb-1">
+                                                3. Selecione o Campo do Prompt ({nodeParameters.length} {nodeParameters.length === 1 ? 'campo' : 'campos'} disponível{nodeParameters.length > 1 ? 'eis' : ''})
+                                            </label>
+                                            <select value={selectedParameterKey} onChange={e => setSelectedParameterKey(e.target.value)} className={baseInputClasses}>
+                                                <option value="">-- Escolha um campo --</option>
+                                                {nodeParameters.map(param => (
+                                                    <option key={param} value={param}>
+                                                        {param}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                            <p className="text-xs text-slate-400 mt-1">
+                                                Campos encontrados automaticamente. Se o campo que você procura não aparecer, pode estar em um objeto aninhado.
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        <div className="bg-yellow-900/30 border border-yellow-700/50 rounded-lg p-3 text-yellow-200 text-sm">
+                                            <p className="font-semibold mb-1">⚠️ Nenhum campo de prompt encontrado</p>
+                                            <p className="text-xs">
+                                                Não encontramos campos de prompt neste node. Isso pode acontecer se:
+                                            </p>
+                                            <ul className="text-xs mt-1 ml-4 list-disc">
+                                                <li>O node ainda não foi configurado</li>
+                                                <li>Os prompts estão em uma estrutura muito aninhada</li>
+                                                <li>Este node não usa prompts de texto</li>
+                                            </ul>
+                                        </div>
+                                    )}
+                                </>
                             )}
                         </>
+                    ) : (
+                        <div className="bg-slate-700/50 border border-slate-600 rounded-lg p-3 text-slate-300 text-sm text-center">
+                            Nenhum node encontrado neste workflow.
+                        </div>
                     )}
                     <button
                         onClick={handleUpdateNode}
