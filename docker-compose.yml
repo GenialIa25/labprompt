@@ -1,0 +1,202 @@
+version: "3.7"
+services:
+
+## --------------------------- ORION - EDITOR (UI/API) --------------------------- ##
+  n8n_editor:
+    # OTIMIZAÇÃO 1: Versão fixada para estabilidade em produção
+    image: n8nio/n8n:1.119.2 ## Versão do N8N
+    command: start
+    networks:
+      - vps
+    environment:
+      # ... (suas configurações de DB, URL, etc., permanecem as mesmas)
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_DATABASE=n8n_queue
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_USER=postgres
+      - DB_POSTGRESDB_PASSWORD=f5c344c266769d1220973fae1ef9cf79
+      - N8N_ENCRYPTION_KEY=a648afbb9fe0b2706b84d04c5efaf5e2
+      - N8N_HOST=n8n.iagoflow.com
+      - N8N_EDITOR_BASE_URL=https://n8n.iagoflow.com/
+      - WEBHOOK_URL=https://webhook.iagoflow.com/
+      - N8N_PROTOCOL=https
+      - NODE_ENV=production
+      - EXECUTIONS_MODE=queue
+      - N8N_REINSTALL_MISSING_PACKAGES=true
+      - N8N_COMMUNITY_PACKAGES_ENABLED=true
+      - N8N_NODE_PATH=/home/node/.n8n/nodes
+      - N8N_SMTP_SENDER=iagoflow.com@order-boxes.com
+      - N8N_SMTP_USER=iagoflow.com@order-boxes.com
+      - N8N_SMTP_PASS=Senha_123!
+      - N8N_SMTP_HOST=vps103.order-boxes.com
+      - N8N_SMTP_PORT=465
+      - N8N_SMTP_SSL=false
+      - QUEUE_BULL_REDIS_HOST=redis
+      - QUEUE_BULL_REDIS_PORT=6379
+      - QUEUE_BULL_REDIS_DB=2
+      - NODE_FUNCTION_ALLOW_EXTERNAL=moment,lodash,moment-with-locales
+      - EXECUTIONS_DATA_PRUNE=true
+      - EXECUTIONS_DATA_MAX_AGE=336
+      - GENERIC_TIMEZONE=America/Sao_Paulo
+      - TZ=America/Sao_Paulo
+      - N8N_CORS_ALLOW_ORIGIN=*
+
+      # OTIMIZAÇÃO 2: Aumentar pool de conexões com o DB
+      - DB_POSTGRESDB_POOL_MAX=20
+
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        # Alocação para o Editor (UI): 1 CPU / 1GB RAM é suficiente
+        limits:
+          cpus: "1"
+          memory: 1024M
+      # ... (suas labels traefik permanecem as mesmas)
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.n8n_editor.rule=Host(`n8n.iagoflow.com`)
+        - traefik.http.routers.n8n_editor.entrypoints=websecure
+        - traefik.http.routers.n8n_editor.priority=1
+        - traefik.http.routers.n8n_editor.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.n8n_editor.service=n8n_editor
+        - traefik.http.services.n8n_editor.loadbalancer.server.port=5678
+        - traefik.http.services.n8n_editor.loadbalancer.passHostHeader=1
+
+## ------------------------- ORION - WEBHOOK (Entrada) ------------------------- ##
+  n8n_webhook:
+    # OTIMIZAÇÃO 1: Versão fixada
+    image: n8nio/n8n:1.119.2 ## Versão do N8N
+    command: webhook
+    networks:
+      - vps
+    environment:
+      # ... (suas configurações de DB, URL, etc., permanecem as mesmas)
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_DATABASE=n8n_queue
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_USER=postgres
+      - DB_POSTGRESDB_PASSWORD=f5c344c266769d1220973fae1ef9cf79
+      - N8N_ENCRYPTION_KEY=a648afbb9fe0b2706b84d04c5efaf5e2
+      - N8N_HOST=n8n.iagoflow.com
+      - N8N_EDITOR_BASE_URL=https://n8n.iagoflow.com/
+      - WEBHOOK_URL=https://webhook.iagoflow.com/
+      - N8N_PROTOCOL=https
+      - NODE_ENV=production
+      - EXECUTIONS_MODE=queue
+      - N8N_REINSTALL_MISSING_PACKAGES=true
+      - N8N_COMMUNITY_PACKAGES_ENABLED=true
+      - N8N_NODE_PATH=/home/node/.n8n/nodes
+      - N8N_SMTP_SENDER=iagoflow.com@order-boxes.com
+      - N8N_SMTP_USER=iagoflow.com@order-boxes.com
+      - N8N_SMTP_PASS=Senha_123!
+      - N8N_SMTP_HOST=vps103.order-boxes.com
+      - N8N_SMTP_PORT=465
+      - N8N_SMTP_SSL=false
+      - QUEUE_BULL_REDIS_HOST=redis
+      - QUEUE_BULL_REDIS_PORT=6379
+      - QUEUE_BULL_REDIS_DB=2
+      - NODE_FUNCTION_ALLOW_EXTERNAL=moment,lodash,moment-with-locales
+      - EXECUTIONS_DATA_PRUNE=true
+      - EXECUTIONS_DATA_MAX_AGE=336
+      - GENERIC_TIMEZONE=America/Sao_Paulo
+      - TZ=America/Sao_Paulo
+      
+      # OTIMIZAÇÃO 2: Aumentar pool de conexões com o DB
+      - DB_POSTGRESDB_POOL_MAX=20
+      
+      # OTIMIZAÇÃO 3: Desativar processos desnecessários para economizar recursos
+      - N8N_DISABLE_PRODUCTION_MAIN_PROCESS=true
+      
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        # Alocação para Webhook: 1 CPU / 1GB RAM é suficiente
+        limits:
+          cpus: "1"
+          memory: 1024M
+      # ... (suas labels traefik permanecem as mesmas)
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.n8n_webhook.rule=(Host(`webhook.iagoflow.com`))
+        - traefik.http.routers.n8n_webhook.entrypoints=websecure
+        - traefik.http.routers.n8n_webhook.priority=1
+        - traefik.http.routers.n8n_webhook.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.n8n_webhook.service=n8n_webhook
+        - traefik.http.services.n8n_webhook.loadbalancer.server.port=5678
+        - traefik.http.services.n8n_webhook.loadbalancer.passHostHeader=1
+
+## ------------------------- ORION - WORKER (Execução) ------------------------- ##
+  n8n_worker:
+    # OTIMIZAÇÃO 1: Versão fixada
+    image: n8nio/n8n:1.119.2 ## Versão do N8N
+    command: worker --concurrency=10
+    networks:
+      - vps
+    environment:
+      # ... (suas configurações de DB, URL, etc., permanecem as mesmas)
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_DATABASE=n8n_queue
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_USER=postgres
+      - DB_POSTGRESDB_PASSWORD=f5c344c266769d1220973fae1ef9cf79
+      - N8N_ENCRYPTION_KEY=a648afbb9fe0b2706b84d04c5efaf5e2
+      - N8N_HOST=n8n.iagoflow.com
+      - N8N_EDITOR_BASE_URL=https://n8n.iagoflow.com/
+      - WEBHOOK_URL=https://webhook.iagoflow.com/
+      - N8N_PROTOCOL=https
+      - NODE_ENV=production
+      - EXECUTIONS_MODE=queue
+      - N8N_REINSTALL_MISSING_PACKAGES=true
+      - N8N_COMMUNITY_PACKAGES_ENABLED=true
+      - N8N_NODE_PATH=/home/node/.n8n/nodes
+      - N8N_SMTP_SENDER=iagoflow.com@order-boxes.com
+      - N8N_SMTP_USER=iagoflow.com@order-boxes.com
+      - N8N_SMTP_PASS=Senha_123!
+      - N8N_SMTP_HOST=vps103.order-boxes.com
+      - N8N_SMTP_PORT=465
+      - N8N_SMTP_SSL=false
+      - QUEUE_BULL_REDIS_HOST=redis
+      - QUEUE_BULL_REDIS_PORT=6379
+      - QUEUE_BULL_REDIS_DB=2
+      - NODE_FUNCTION_ALLOW_EXTERNAL=moment,lodash,moment-with-locales
+      - EXECUTIONS_DATA_PRUNE=true
+      - EXECUTIONS_DATA_MAX_AGE=336
+      - GENERIC_TIMEZONE=America/Sao_Paulo
+      - TZ=America/Sao_Paulo
+      
+      # OTIMIZAÇÃO 2: Aumentar pool de conexões com o DB
+      - DB_POSTGRESDB_POOL_MAX=20
+
+      # OTIMIZAÇÃO 3: Desativar processos desnecessários para economizar recursos
+      - N8N_DISABLE_PRODUCTION_MAIN_PROCESS=true
+      
+    deploy:
+      mode: replicated
+      # OTIMIZAÇÃO 4: Comece com 1 worker poderoso. Se necessário, aumente para 2.
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        # OTIMIZAÇÃO 5 (MAIS IMPORTANTE): Dê mais recursos ao worker!
+        limits:
+          cpus: "2"      # <-- AUMENTADO DE 1 para 2
+          memory: 2048M  # <-- AUMENTADO DE 1GB para 2GB
+
+## ----------------------------------------------------------------------------- ##
+
+networks:
+  vps:
+    external: true
+    name: vps

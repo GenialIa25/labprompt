@@ -1,0 +1,7 @@
+{
+  "name": "Copy of FORK - LAB-PROMPT V2",
+  "description": "An application to generate detailed AI agent prompts based on a master template and user-provided variables, using the Gemini API.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
